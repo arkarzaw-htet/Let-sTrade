@@ -1,0 +1,335 @@
+================================================================================
+                     LET'S TRADE - MVP SPECIFICATION & API DOCS
+================================================================================
+
+1. OVERVIEW
+--------------------------------------------------------------------------------
+Let's Trade is a paper-trading cryptocurrency backend built with Spring Boot,
+Spring Security (JWT), Spring Data JPA, and PostgreSQL. It allows users to simulate
+trading real-time cryptocurrency pairs using simulated paper money (USDT).
+
+Live market prices are fetched from Binance public REST APIs with resilient fallback
+mechanisms in case of offline environments.
+
+
+2. MVP CORE ARCHITECTURE & FEATURES
+--------------------------------------------------------------------------------
+
+[ USER MANAGEMENT ]
+• FR-01: Create Account (Register)
+  - Validates email & password.
+  - Hashes passwords using BCrypt.
+  - Automatically initializes a user Wallet with 10,000 USDT (and 0 BTC, 0 ETH).
+• FR-02: Login
+  - Authenticates credentials and returns a signed JWT token.
+• FR-03: View Profile
+  - Authenticated endpoint returning user id, name, email, and creation timestamp.
+
+[ CRYPTOCURRENCIES & MARKET DATA ]
+• FR-04: View Tradable Cryptocurrencies
+  - Lists available trading pairs (e.g. BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT, etc.)
+• FR-05: View Cryptocurrency Details
+  - Returns metadata + live price + 24h price change percentage.
+• FR-06: View Current Market Price & Stats
+  - Direct market ticker price and 24-hour volume / high / low statistics.
+
+[ WALLET (PAPER MONEY) ]
+• FR-07: Auto-created Wallet
+  - Default initial balance: 10,000 USDT.
+• FR-08: View Wallet Balance
+  - Retrieves all asset holdings (USDT, BTC, ETH, etc.) and quantities.
+• FR-09: Deposit Paper Money
+  - Simulates depositing extra paper money (e.g. +5,000 USDT).
+
+[ TRADING & ORDER EXECUTION ]
+• FR-10: Place Buy Order
+  - Immediate market execution: checks USDT balance >= (price * quantity).
+  - Deducts USDT and adds the base cryptocurrency to user's wallet.
+• FR-11: Place Sell Order
+  - Checks crypto balance >= quantity.
+  - Deducts crypto and adds USDT (quantity * price) to user's wallet.
+• FR-12: Execute Order
+  - Order marked as FILLED with execution price and timestamp.
+• FR-13: Order History
+  - List all past orders for the authenticated user, ordered by date descending.
+• FR-14: View Specific Order
+  - Retrieve details of an individual order by ID.
+
+[ PORTFOLIO ]
+• FR-15: View Holdings
+  - Summary of each coin held, current market price in USDT, and current value.
+• FR-16: Total Portfolio Value
+  - Dynamically calculates the total USDT worth of the entire portfolio.
+
+
+3. REST API ENDPOINTS SPECIFICATION
+--------------------------------------------------------------------------------
+
+--------------------------------------------------------------------------------
+AUTH & USER
+--------------------------------------------------------------------------------
+POST /api/auth/register
+  Request:
+  {
+    "name": "Satoshi Nakamoto",
+    "email": "trader@example.com",
+    "password": "Password123!"
+  }
+  Response: 201 Created
+
+POST /api/auth/login
+  Request:
+  {
+    "email": "trader@example.com",
+    "password": "Password123!"
+  }
+  Response: 200 OK
+  {
+    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+  }
+
+GET /api/users/me
+  Header: Authorization: Bearer <token>
+  Response: 200 OK
+  {
+    "id": 1,
+    "name": "Satoshi Nakamoto",
+    "email": "trader@example.com",
+    "createdAt": "2026-09-24T14:30:00"
+  }
+
+--------------------------------------------------------------------------------
+CRYPTOCURRENCIES & MARKET (Public)
+--------------------------------------------------------------------------------
+GET /api/cryptocurrencies (or /api/cryptos)
+  Response: 200 OK
+  [
+    {
+      "symbol": "BTCUSDT",
+      "name": "Bitcoin",
+      "baseAsset": "BTC",
+      "quoteAsset": "USDT"
+    },
+    {
+      "symbol": "ETHUSDT",
+      "name": "Ethereum",
+      "baseAsset": "ETH",
+      "quoteAsset": "USDT"
+    }
+  ]
+
+GET /api/cryptocurrencies/{symbol}
+  Example: GET /api/cryptocurrencies/BTCUSDT
+  Response: 200 OK
+  {
+    "symbol": "BTCUSDT",
+    "name": "Bitcoin",
+    "baseAsset": "BTC",
+    "quoteAsset": "USDT",
+    "price": 95420.50,
+    "priceChange24h": 2.35
+  }
+
+GET /api/market/{symbol}/price
+  Example: GET /api/market/BTCUSDT/price
+  Response: 200 OK
+  {
+    "symbol": "BTCUSDT",
+    "price": 95420.50
+  }
+
+GET /api/market/{symbol}/stats
+  Example: GET /api/market/BTCUSDT/stats
+  Response: 200 OK
+  {
+    "symbol": "BTCUSDT",
+    "price": 95420.50,
+    "priceChangePercent": 2.35,
+    "highPrice": 96800.00,
+    "lowPrice": 93200.00,
+    "volume": 14502.80
+  }
+
+--------------------------------------------------------------------------------
+REAL-TIME WEBSOCKET PRICE & PORTFOLIO STREAMS
+--------------------------------------------------------------------------------
+1. Market Prices (Raw WebSocket):
+   URL: ws://localhost:8080/ws/prices (or ws://localhost:8080/ws/raw)
+
+2. Market Prices (STOMP):
+   URL: ws://localhost:8080/ws/market
+   Topics:
+     - /topic/prices (All price updates)
+     - /topic/market/{symbol} (Specific pair update, e.g., /topic/market/BTCUSDT)
+
+3. Personal Portfolio & Net Worth Stream (Raw WebSocket):
+   URL: ws://localhost:8080/ws/portfolio?token=<YOUR_JWT_TOKEN>
+   (or connect to ws://localhost:8080/ws/portfolio and send {"token": "<JWT>"})
+   Whenever market prices change or a trade/deposit occurs, the server automatically
+   recalculates the user's total net worth in USDT and pushes the updated portfolio:
+   {
+     "totalValueUsdt": 10000.00,
+     "holdings": [
+       {
+         "asset": "USDT",
+         "quantity": 9050.00,
+         "priceUsdt": 1.0,
+         "valueUsdt": 9050.00
+       },
+       {
+         "asset": "BTC",
+         "quantity": 0.01,
+         "priceUsdt": 95420.50,
+         "valueUsdt": 954.21
+       }
+     ]
+   }
+
+4. Personal Portfolio Stream (STOMP):
+   URL: ws://localhost:8080/ws/market
+   Topic: /topic/portfolio/{userEmail}
+
+--------------------------------------------------------------------------------
+WALLET (Authenticated)
+--------------------------------------------------------------------------------
+GET /api/wallet
+  Header: Authorization: Bearer <token>
+  Response: 200 OK
+  {
+    "assets": [
+      {
+        "symbol": "USDT",
+        "quantity": 10000.00
+      },
+      {
+        "symbol": "BTC",
+        "quantity": 0.00
+      },
+      {
+        "symbol": "ETH",
+        "quantity": 0.00
+      }
+    ]
+  }
+
+POST /api/wallet/deposit
+  Header: Authorization: Bearer <token>
+  Request:
+  {
+    "asset": "USDT",
+    "amount": 5000.00
+  }
+  Response: 200 OK
+  {
+    "assets": [
+      {
+        "symbol": "USDT",
+        "quantity": 15000.00
+      },
+      ...
+    ]
+  }
+
+--------------------------------------------------------------------------------
+ORDERS & TRADING (Authenticated)
+--------------------------------------------------------------------------------
+POST /api/orders
+  Header: Authorization: Bearer <token>
+  Request:
+  {
+    "symbol": "BTCUSDT",
+    "side": "BUY",
+    "quantity": 0.01
+  }
+  Response: 200 OK
+  {
+    "id": 1,
+    "symbol": "BTCUSDT",
+    "side": "BUY",
+    "quantity": 0.01,
+    "price": 95420.50,
+    "totalAmount": 954.2050,
+    "status": "FILLED",
+    "createdAt": "2026-09-24T14:32:10"
+  }
+
+GET /api/orders
+  Header: Authorization: Bearer <token>
+  Response: 200 OK
+  [
+    {
+      "id": 1,
+      "symbol": "BTCUSDT",
+      "side": "BUY",
+      "quantity": 0.01,
+      "price": 95420.50,
+      "totalAmount": 954.2050,
+      "status": "FILLED",
+      "createdAt": "2026-09-24T14:32:10"
+    }
+  ]
+
+GET /api/orders/{id}
+  Header: Authorization: Bearer <token>
+  Response: 200 OK
+  {
+    "id": 1,
+    "symbol": "BTCUSDT",
+    "side": "BUY",
+    "quantity": 0.01,
+    "price": 95420.50,
+    "totalAmount": 954.2050,
+    "status": "FILLED",
+    "createdAt": "2026-09-24T14:32:10"
+  }
+
+--------------------------------------------------------------------------------
+PORTFOLIO (Authenticated)
+--------------------------------------------------------------------------------
+GET /api/portfolio
+  Header: Authorization: Bearer <token>
+  Response: 200 OK
+  {
+    "totalValueUsdt": 15000.00,
+    "holdings": [
+      {
+        "asset": "USDT",
+        "quantity": 14045.795,
+        "priceUsdt": 1.0,
+        "valueUsdt": 14045.80
+      },
+      {
+        "asset": "BTC",
+        "quantity": 0.01,
+        "priceUsdt": 95420.50,
+        "valueUsdt": 954.21
+      }
+    ]
+  }
+
+
+4. ERROR HANDLING
+--------------------------------------------------------------------------------
+Standardized JSON error responses:
+{
+  "timestamp": "2026-09-24T14:33:00",
+  "status": 400,
+  "error": "Insufficient Balance",
+  "message": "Insufficient USDT balance. Required: 95420.50, Available: 10000.00"
+}
+
+
+5. FUTURE ROADMAP (Post-MVP)
+--------------------------------------------------------------------------------
+V2:
+- WebSocket live orderbook and real-time ticker stream
+- Redis caching for high-frequency market data
+- Limit orders & Order Matching engine
+- Concurrency locks (Pessimistic / Optimistic locking on wallet balances)
+- Admin dashboard endpoints
+
+V3:
+- Docker compose production deployment & Nginx reverse proxy
+- Prometheus & Grafana monitoring
+- CI/CD pipeline automation
+================================================================================
