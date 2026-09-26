@@ -1,7 +1,7 @@
 // ─────────────────────────────────────────────
 //  API utility — all fetch calls go here
 // ─────────────────────────────────────────────
-const BASE = 'http://localhost:8080/api';
+const BASE = '/api';
 
 function getToken() {
   return localStorage.getItem('let_trade_token');
