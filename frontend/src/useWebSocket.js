@@ -9,11 +9,12 @@ import { useEffect, useRef } from 'react';
 import { Client } from '@stomp/stompjs';
 import SockJS from 'sockjs-client';
 
-const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-const host = window.location.host;
 
-const STOMP_URL = `${protocol}//${host}/ws/market`;
-const PORTFOLIO_WS = `${protocol}//${host}/ws/portfolio`;
+// const STOMP_URL = `http://167.99.78.131:8080/ws/market`;
+// const PORTFOLIO_WS = `http://167.99.78.131:8080/ws/portfolio`;
+
+const STOMP_URL = `https://letstrade.arkarzawhtet.com/api/ws/market`;
+const PORTFOLIO_WS = `https://letstrade.arkarzawhtet.com/api/ws/portfolio`;
 
 function getToken() {
   return localStorage.getItem('let_trade_token');

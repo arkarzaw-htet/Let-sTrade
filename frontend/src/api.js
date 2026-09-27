@@ -1,7 +1,7 @@
 // ─────────────────────────────────────────────
 //  API utility — all fetch calls go here
 // ─────────────────────────────────────────────
-const BASE = '/api';
+const BASE = 'https://letstrade.arkarzawhtet.com/api';
 
 function getToken() {
   return localStorage.getItem('let_trade_token');
